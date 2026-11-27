@@ -1,24 +1,36 @@
-import { copyFileSync, mkdirSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { copyFileSync, existsSync, mkdirSync, statSync, chmodSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-// Meme Sprint 3: AI Agent Goes Rogue — entry is a single image meme.
-// This script copies the verified entry image to the harness output dir.
-// Resolve the source relative to this script's own directory, not the
-// process working directory: the grader runs `node /bot/main.ts` from a
-// cwd that is not the repo root, so a bare "entry.jpg" would ENOENT.
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SOURCE = join(SCRIPT_DIR, "entry.jpg");
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR || "/output";
-const DEST = join(OUTPUT_DIR, "entry.jpg");
+const here = dirname(fileURLToPath(import.meta.url));
+const source = join(here, "entry.jpg");
+const outDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
+const target = join(outDir, "entry.jpg");
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-copyFileSync(SOURCE, DEST);
-
-// Verify the copy is complete: source and destination must match byte for byte.
-const srcBytes = statSync(SOURCE).size;
-const dstBytes = statSync(DEST).size;
-if (srcBytes !== dstBytes) {
-  throw new Error(`Copy incomplete: ${SOURCE} is ${srcBytes} bytes but ${DEST} is ${dstBytes} bytes`);
+if (!existsSync(source)) {
+  console.error(`missing entry image: ${source}`);
+  process.exit(1);
 }
-console.log(`Wrote ${DEST} (${dstBytes} bytes, verified)`);
+
+mkdirSync(outDir, { recursive: true });
+copyFileSync(source, target);
+chmodSync(target, 0o644);
+
+const srcSize = statSync(source).size;
+const outStat = statSync(target);
+if (outStat.size !== srcSize) {
+  console.error(`size mismatch: wrote ${outStat.size} bytes, expected ${srcSize}`);
+  process.exit(1);
+}
+if ((outStat.mode & 0o777) !== 0o644) {
+  console.error(`mode mismatch: ${ (outStat.mode & 0o777).toString(8) }, expected 644`);
+  process.exit(1);
+}
+const srcBytes = readFileSync(source);
+const outBytes = readFileSync(target);
+if (!srcBytes.equals(outBytes)) {
+  console.error("content mismatch: output bytes differ from entry.jpg");
+  process.exit(1);
+}
+
+console.log(`wrote ${target} (${outStat.size} bytes, mode 644)`);
